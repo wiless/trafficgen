@@ -1,0 +1,33 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v4.json",
+  "width": 1500,
+  "data": {
+    "url": "event-cell00.csv"
+  },
+  "transform": [
+    {
+      "calculate": "datum.DeviceID>50000",
+      "as": "Relay"
+    }
+  ],
+  "mark": "point",
+  "selection": {
+    "pandz": {
+      "type": "interval",
+      "bind": "scales"
+    }
+  },
+  "encoding": {
+    "y": {
+      "aggregate": "count",
+      "field": "Frame"
+    },
+    "x": {
+      "field": "Frame",
+      "type": "quantitative",
+      "scale": {
+        "domainMax": 10000
+      }
+    }
+  }
+}

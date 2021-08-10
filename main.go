@@ -33,9 +33,15 @@ type EventList []Event
 // func (a EventList) Len() int           { return len(a) }
 // func (a EventList) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 // func (a EventList) Less(i, j int) bool { return a[i].Frame < a[j].Frame }
+
+func init() {
+
+}
+
 func main() {
-	Ndevices = 100000
+	Ndevices = 72000
 	Nsamples := 10
+	NSectors := 60
 	var MaxWindowHr float64 = 2.0 * 3600 // in Hr
 	var Lamda float64 = 1.0 / (2 * 3600)
 	fmt.Printf("\n Mean Exp Distribution is %v", 1.0/Lamda)
@@ -43,7 +49,7 @@ func main() {
 	fmt.Printf("\n MaxWindow Hr  %v", MaxWindowHr)
 	var frameInterval = 0.01 // 10ms
 
-	for cell := 0; cell < 19; cell++ {
+	for cell := 0; cell < NSectors; cell++ {
 
 		var events EventList
 
