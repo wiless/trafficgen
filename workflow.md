@@ -16,4 +16,4 @@ Objective is to capture the statistics of the interference generated from adjace
 
 - Uplink Interference of *Cell0* 500 devices statistics
 
-![](/home/ssk/Documents/Articles/2021-08-10-20-28-26-image.png)
+![](2021-08-10-20-28-26-image.png)

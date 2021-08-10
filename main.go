@@ -41,7 +41,7 @@ func init() {
 func main() {
 	Ndevices = 72000
 	Nsamples := 10
-	NSectors := 60
+	NSectors := 61
 	var MaxWindowHr float64 = 2.0 * 3600 // in Hr
 	var Lamda float64 = 1.0 / (2 * 3600)
 	fmt.Printf("\n Mean Exp Distribution is %v", 1.0/Lamda)
