@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Plot tools</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@observablehq/plot@0.1"></script>
+</head>
+
+<body>
+    <button onclick="loadme()">Plot Me</button>
+
+    <div id="plot"> </div>
+    <div class="container"></div>
+    <script>
+
+        var options;
+        var uedata;
+        var slsdata;
+        var infdata;
+        var domain = [];
+    </script>
+    <script type="module">
+        // Import Observable runtime and the @d3/color-legend notebook
+        import { Runtime } from "https://cdn.jsdelivr.net/npm/@observablehq/runtime@4/dist/runtime.js";
+        import d3_colorLegend from "https://api.observablehq.com/@d3/color-legend.js?v=3";
+        const module = new Runtime().module(d3_colorLegend);
+        const legend = await module.value("legend");
+
+
+        async function loadme() {
+            slsdata = await d3.csv("../results/n600/newsls-mini.csv", d3.autoType)
+
+            if (!uedata || !infdata) {
+                d3.csv("../results/n600/uelocation.csv", d3.autoType).then(d => {
+
+                    uedata = d
+                    d3.csv("../results/n600/linkproperties-mini-filtered.csv", d3.autoType).then(
+                        d => {
+
+
+
+                            infdata = d
+                            console.log(infdata.length, uedata.length);
+
+                            plotme();
+
+                        }
+
+                    )
+                }
+
+                );
+
+            }
+        }
+        // loadme();
+        loadulsinr()
+        async function loadulsinr() {
+            d3.csv("ulsinr.csv", d3.autoType).then(d => {
+                var ulsinr = d;
+
+                var el1 = Plot.plot({
+                    grid: true,
+                    color: { domain: ["snap", "ideal", "mean"], range: ["red", "green", "blue"] },
+                    marks: [
+                        Plot.line(ulsinr, Plot.binX({ y: "proportion" }, { cumulative: true, x: "SINRsnap", stroke: "red" })),
+                        Plot.line(ulsinr, Plot.binX({ y: "proportion" }, { cumulative: true, x: "SINRideal", stroke: "green" })),
+                        Plot.line(ulsinr, Plot.binX({ y: "proportion" }, { cumulative: true, x: "SINRmean", stroke: "blue" }))
+                    ]
+                });
+                document.querySelector("#plot").appendChild(el1);
+
+                const el1domain = d3.extent(ulsinr, d => d.BestRSRPNode);
+                const el1legend = legend({
+                    color: d3.scaleOrdinal(["snap", "ideal", "mean"], ["red", "green", "blue"]),
+                    title: "Type",
+                    tickSize: 5,
+                    height: 43,
+
+                });
+                document.querySelector("#plot").appendChild(el1legend);
+            }
+
+            );
+
+
+
+        }
+        function CalculateSINR() {
+
+
+        }
+
+
+        async function plotme() {
+            console.log("ready", domain);
+            // console.log(uedata);
+            // console.log(infdata);
+            // var mark1 = Plot.dot(uedata, {x: "X", y: "Y", fill: (v, indx) => slsdata[indx].BestSINR });
+
+            var options = {
+
+                style: {
+                    paddingTop: 10,
+                },
+                caption: "Figure 1.  ",
+                grid: true,
+                color: {
+                    type: "sequential", scheme: "viridis",
+                },
+                marks: []
+            };
+
+            var N0 = -106.62;
+            // document.getElementById("plot").firstChild.remove();
+            // document.getElementById("plot").appendChild(Plot.plot(options));
+            // var mark2 = Plot.line(slsdata, Plot.binX({y: "proportion" }, {cummlative: false, x: "BestSINR" }));
+            var SNR = function (d) {
+
+                return d.CouplingLoss + 23
+            }
+
+            function SmartSNR(d) {
+                if (d.RxNodeID < 983) {
+                    return slsdata[d.RxNodeID - 383 - 1].BestULsinr
+                } else {
+                    return SNR(d) - N0
+                }
+            }
+
+            var scatterplot = Plot.dot(infdata, { filter: d => (d.RxNodeID > 0), x: d => uedata[d.RxNodeID - 383 - 1].X, y: d => uedata[d.RxNodeID - 383 - 1].Y, fill: d => SmartSNR(d), size: 50, fillOpacity: 0.31 })
+            options.marks = [scatterplot];
+
+            const el1 = legend({
+                color: d3.scaleSequential(d3.extent(infdata, d => SmartSNR(d)), d3.interpolateViridis),
+                title: "SNR @ Sector 0,1,2"
+            });
+
+            domain = d3.extent(infdata, d => d.TxID);
+            const el = legend({
+                color: d3.scaleSequential(domain, d3.interpolateViridis),
+                title: "TxID"
+            });
+
+            document.querySelector("#plot").appendChild(el1);
+
+
+            // document.getElementById("plot").firstChild.remove();
+            document.getElementById("plot").appendChild(Plot.plot(options));
+
+            /// Plot CDF of Interference to Sector 0/1/2
+            var cdfmark = Plot.line(d3.filter(infdata, d => d.RxNodeID > 983), Plot.binX({ y: "proportion" }, { cumulative: true, x: d => SNR(d), stroke: "TxID" }))
+            options.marks = [cdfmark];
+            options.y = { domain: [0, 1], label: "CDF F(x)" };
+            options.x = { label: "rssi dBm" };
+            document.querySelector("#plot").appendChild(el);
+            document.getElementById("plot").appendChild(Plot.plot(options));
+
+            // Find SINR 
+            // document.getElementById("plot").appendChild(Plot.plot(options));
+
+            // /// Plot CDF of Interference to Sector 2
+            // document.getElementById("plot").appendChild(Plot.plot(options));
+
+
+        };
+
+
+
+
+        // Container element into which the swatches will render
+        // const container = document.querySelector(".container")
+        // renderLegend(container, {
+        //     color: d3.scaleSequential(d3.extent(infdata, d => d.CouplingLoss + 23), d3.interpolateViridis),
+        //     title: "Coupling Loss+23dBm"
+        // });
+        // renderSwatches(container)
+        // async function renderSwatches(el) {
+        //     // Get the value of the "swatches" notebook cell, which is the function we want, which returns a DOM element
+        //     const module = new Runtime().module(d3_colorLegend);
+        //     const swatches = await module.value("swatches");
+
+        //     // Finally, call `swatches` with our options and append it to the container
+        //     const element = swatches({ color, marginLeft: margin.left, columns: "180px" });
+        //     el.appendChild(element);
+        // }
+
+
+    </script>
+</body>
+
+</html>

@@ -17,3 +17,11 @@ Objective is to capture the statistics of the interference generated from adjace
 - Uplink Interference of *Cell0* 500 devices statistics
 
 ![](2021-08-10-20-28-26-image.png)
+
+No Shadow, 112-Electrical Tilt
+
+![](/home/ssk/Documents/Articles/2021-08-10-22-24-16-image.png)
+
+![](/home/ssk/Documents/Articles/2021-08-11-11-34-20-image.png)
+
+![](/home/ssk/Documents/Articles/2021-08-11-12-14-29-image.png)
