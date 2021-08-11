@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"sort"
 	"time"
 
 	"github.com/schollz/progressbar"
@@ -49,20 +50,24 @@ func main() {
 
 	/// EVENT RELATED
 	MaxWindowHr := 0.25 * 3600 // in Hr
-	// GenerateTrafficEvents(72000, NBsectors, MaxWindowHr) // sufficient for center cell
+	//   GenerateTrafficEvents(72000, NBsectors, MaxWindowHr) // sufficient for center cell
 
 	// Load Sector 0 events
 	ev0 := make([]Event, 0)
 	ev61 := make([]Event, 0)
 	ev122 := make([]Event, 0)
+	allev := make([]Event, 0)
 	d3.ForEachParse(basedir+"event-cell00.csv", func(ev Event) {
 		ev0 = append(ev0, ev)
+		allev = append(allev, ev)
 	})
 	d3.ForEachParse(basedir+"event-cell61.csv", func(ev Event) {
 		ev61 = append(ev61, ev)
+		allev = append(allev, ev)
 	})
 	d3.ForEachParse(basedir+"event-cell122.csv", func(ev Event) {
 		ev122 = append(ev122, ev)
+		allev = append(allev, ev)
 	})
 	interferencesectors := make([]IEvent, 0)
 	pbar1 := progressbar.Default(int64(MaxWindowHr/0.01), "Loading Events")
@@ -73,7 +78,22 @@ func main() {
 		interferencesectors = append(interferencesectors, ev)
 
 	})
-	fmt.Printf("Event %d %#v ", count, len(interferencesectors))
+	fmt.Printf("\nI Event %d %#v ", count, len(interferencesectors))
+	fmt.Printf("\nEvent %d %#v ", len(ev0))
+	fmt.Printf("\nEvent %d %#v ", len(ev61))
+	fmt.Printf("\nEvent %d %#v ", len(ev122))
+
+	fmt.Printf("\nEvent  %#v ", allev[0:10])
+	sort.Slice(allev, func(i, j int) bool {
+		return allev[i].Frame < allev[j].Frame
+		// ev0[j], ev0[i] = ev0[i], ev0[j]
+	})
+	fmt.Printf("\nEvent  %#v ", allev[0:10])
+	/// iframes = d3.group(
+	//   d3.sort(interferencesectors, (d) => d.Frame),
+	//   (d) => d.Frame
+	// )
+
 	return
 	////  INTERFERENCE RELATED
 
