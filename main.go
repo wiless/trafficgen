@@ -8,6 +8,7 @@ import (
 
 	"github.com/schollz/progressbar"
 	"github.com/wiless/d3"
+	"github.com/wiless/vlib"
 )
 
 var Iprofilefname string
@@ -17,12 +18,17 @@ type Event struct {
 	DeviceID int
 }
 
+type IEvent struct {
+	Frame    int64
+	SectorID int
+}
+
 var NObservationSecs float64 = 2 * 3600 // seconds
 var Ndevices int64
 var basedir string
 
 func bye() {
-	fmt.Printf("\n")
+	fmt.Println()
 }
 func init() {
 	basedir = "./data/"
@@ -34,17 +40,49 @@ func init() {
 type EventList []Event
 
 var Nsamples = 10
-var NSectors = 61
 var indir string // Reference for Cell0 results 72k device
 var ilinks map[int]CellMap
 var ilinksCell0 vLinkFiltered
 
 func main() {
 	loadSysParams()
-	NUEs := 600
-	ilinks = LoadULInterferenceLinks(basedir + "linkproperties-mini-filtered.csv")
 
-	// Loaded for 72k devices
+	/// EVENT RELATED
+	MaxWindowHr := 0.25 * 3600 // in Hr
+	// GenerateTrafficEvents(72000, NBsectors, MaxWindowHr) // sufficient for center cell
+
+	// Load Sector 0 events
+	ev0 := make([]Event, 0)
+	ev61 := make([]Event, 0)
+	ev122 := make([]Event, 0)
+	d3.ForEachParse(basedir+"event-cell00.csv", func(ev Event) {
+		ev0 = append(ev0, ev)
+	})
+	d3.ForEachParse(basedir+"event-cell61.csv", func(ev Event) {
+		ev61 = append(ev61, ev)
+	})
+	d3.ForEachParse(basedir+"event-cell122.csv", func(ev Event) {
+		ev122 = append(ev122, ev)
+	})
+	interferencesectors := make([]IEvent, 0)
+	pbar1 := progressbar.Default(int64(MaxWindowHr/0.01), "Loading Events")
+	count := 0
+	d3.ForEachParse(basedir+"event-xx.csv", func(ev IEvent) {
+		pbar1.Add(int(float64(ev.Frame)))
+		count++
+		interferencesectors = append(interferencesectors, ev)
+
+	})
+	fmt.Printf("Event %d %#v ", count, len(interferencesectors))
+	return
+	////  INTERFERENCE RELATED
+
+	/// LOAD INTERFERENCE related paramters
+	ilinks = LoadULInterferenceLinks(basedir + "isectorproperties.csv")
+	MeanIPerSectordBm = GetMeanInterference(ilinks)
+
+	// Loaded for ACTIVE DEVICE Information  72k devices
+	NUEs := 600
 	cell0links := make(vLinkFiltered, 0) // Ideally will have 0,61,122 devices
 	ilinksCell0 = make(vLinkFiltered, 0) // Links of Cell 0 devices interfering to adjacent sectors
 	pbar := progressbar.Default(int64(NUEs*3), "Center Cell UEs")
@@ -59,33 +97,24 @@ func main() {
 		}
 		pbar.Add(1)
 	})
+	// SaveSINRProfiles("ulsinr.csv", cell0links, ilinks)
 
-	SaveSINRProfiles("ulsinr.csv", cell0links, ilinks)
+	/// LOAD EVENTS
 
-	// d3.ForEach(ilinksCell0, func(lp LinkFiltered) {
-
-	// 	fmt.Println(lp)
-	// })
-
-	/// Evaluate mean Interference for all Icells
-
-	MeanInterference = GetMeanInterference(ilinks)
+	/// EVALUTE SINR per Frame
 	fmt.Println()
 	result1 := EvaluateTotalI(cell0links[0], 10)
 	result2 := EvaluateSINR(cell0links[0], 184, 185)
 	fmt.Printf("\nTotalI = %#v dBm", result1)
 	fmt.Printf("\nSINR  = %#v dBm", result2)
+	totalI := vlib.Db(vlib.InvDb(result1.I) + vlib.InvDb(result1.I) + UL_N0)
+	result3 := SINR{S: result1.S, I: totalI, SINRdB: result1.S - totalI}
+
+	fmt.Printf("\nEffective  = %#v dBm", result3)
 
 	// fmt.Printf("%#v", ilinks)
 
 }
-
-// func CalculateSINR(lp LinkFiltered, activeBSnodes []int) SINRInfo {
-// 	Iprofilefname = basedir + "linkproperties-mini-filtered.csv"
-// 	linkprofiles := LoadULInterferenceLinks(Iprofilefname)
-// 	SaveSINRProfiles(linkprofiles)
-
-// }
 
 func LoadULInterferenceLinks(fname string) map[int]CellMap {
 	result := make(map[int]CellMap)

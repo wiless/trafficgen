@@ -13,15 +13,22 @@ import (
 	"github.com/wiless/vlib"
 )
 
-func GenerateTrafficEvents() {
-	Ndevices = 72000
+// var NSectors = 61 * 3
 
-	var MaxWindowHr float64 = 2.0 * 3600 // in Hr
+func GenerateTrafficEvents(Ndevices int64, NSectors int, MaxWindowHr float64) {
+	// Ndevices = 72000
+
 	var Lamda float64 = 1.0 / (2 * 3600)
 	fmt.Printf("\n Mean Exp Distribution is %v", 1.0/Lamda)
 	fmt.Printf("\n Ndevices  %v", Ndevices)
 	fmt.Printf("\n MaxWindow Hr  %v", MaxWindowHr)
 	var frameInterval = 0.01 // 10ms
+
+	cfname := fmt.Sprintf(basedir + "events-xx.csv")
+	cfd, _ := os.Create(cfname)
+	defer cfd.Close()
+	header, _ := vlib.Struct2HeaderLine(IEvent{})
+	fmt.Fprint(cfd, header)
 
 	for cell := 0; cell < NSectors; cell++ {
 
@@ -63,18 +70,29 @@ func GenerateTrafficEvents() {
 			device.Add(1)
 			return events[i].Frame < events[j].Frame
 		})
-		fname := fmt.Sprintf("event-cell%02d.csv", cell)
-		fd, _ := os.Create(fname)
-		defer fd.Close()
-		header, _ := vlib.Struct2HeaderLine(Event{})
-		fmt.Fprint(fd, header)
 
-		device = progressbar.Default(int64(NEvents), "Saving to "+fname)
-		d3.ForEach(events, func(indx int, v Event) {
-			// fmt.Printf("\n %d : %#v ", indx, v)
-			device.Add(1)
-			str, _ := vlib.Struct2String(v)
-			fd.WriteString("\n" + str)
-		})
+		if math.Mod(float64(cell), float64(ActiveBSCells)) == 0 {
+			fname := fmt.Sprintf(basedir+"event-cell%02d.csv", cell)
+			fd, _ := os.Create(fname)
+			defer fd.Close()
+			header, _ := vlib.Struct2HeaderLine(Event{})
+			fmt.Fprint(fd, header)
+
+			device = progressbar.Default(int64(NEvents), "Saving to "+fname)
+			d3.ForEach(events, func(indx int, v Event) {
+				device.Add(1)
+				str, _ := vlib.Struct2String(v)
+				fd.WriteString("\n" + str)
+			})
+		} else {
+			device = progressbar.Default(int64(NEvents), fmt.Sprintf("Saving to %s : cell %d", cfname, cell))
+			d3.ForEach(events, func(indx int, v Event) {
+				iv := IEvent{Frame: v.Frame, SectorID: cell}
+				device.Add(1)
+				str, _ := vlib.Struct2String(iv)
+				cfd.WriteString("\n" + str)
+			})
+		}
+
 	}
 }

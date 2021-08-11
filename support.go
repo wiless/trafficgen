@@ -5,7 +5,6 @@ import (
 	"log"
 
 	"github.com/5gif/config"
-	"github.com/wiless/d3"
 	"github.com/wiless/vlib"
 )
 
@@ -31,9 +30,10 @@ type UElocation struct {
 var RxNoisedB, TxNoisedB float64
 var itucfg config.ITUconfig
 var simcfg config.SIMconfig
-var bslocs []BSlocation
+
+// var bslocs []BSlocation
 var bsTxPowerdBm, ueTxPowerdBm float64
-var NBs int
+var NBsectors int
 var ActiveBSCells int
 var N0, UL_N0 float64 // N0 in linear scale
 var UL_N0dB float64
@@ -53,8 +53,8 @@ func loadSysParams() {
 	fmt.Println("Active UECells = ", simcfg.ActiveUECells)
 	itucfg, _ = config.ReadITUConfig(basedir + "itu.cfg")
 	// ----
-	d3.CSV(basedir+"bslocation.csv", &bslocs) // needed ?
-	NBs = len(bslocs)
+	// d3.CSV(basedir+"bslocation.csv", &bslocs) // needed ?
+	NBsectors = ActiveBSCells * 3 // len(bslocs)
 
 	BW = itucfg.BandwidthMHz
 	RxNoisedB = itucfg.UENoiseFigureDb // For Downlink
@@ -69,7 +69,7 @@ func loadSysParams() {
 	bsTxPowerdBm = itucfg.TxPowerDbm
 	ueTxPowerdBm = itucfg.UETxDbm
 
-	fmt.Println("Total Active Sectors ", NBs)
+	fmt.Println("Total Active Sectors ", NBsectors)
 
 	fmt.Println("DL : N0 (dB)", N0dB)
 	fmt.Println("UL : N0 (dB)", UL_N0dB)

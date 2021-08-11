@@ -32,7 +32,7 @@ type SINRInfo struct {
 func SaveSINRProfiles(fname string, userlinks vLinkFiltered, Ilinks map[int]CellMap) {
 	// Find Interfering Cells
 
-	MeanIPerSectordBm := GetMeanInterference(Ilinks)
+	// MeanIPerSectordBm := GetMeanInterference(Ilinks)
 
 	NActive := rand.Intn(ActiveBSCells*3 - 1)
 	// NActive = ActiveBSCells*3 - 1 // ???
@@ -72,14 +72,14 @@ func GetMeanInterference(linkinfo map[int]CellMap) map[int]vlib.VectorF {
 	MeanIPerSectordBm := make(map[int]vlib.VectorF)
 	for sector := range linkinfo {
 		// cm := linkinfo[sector]
-		fmt.Printf("\n Current Sector %d of %d \n CellMap information  ", sector, NBs)
+		fmt.Printf("\n Current Sector %d of %d \n CellMap information  ", sector, NBsectors)
 		// for i := 0; i < NBs; i++ {
 		// 	v := cm[i]
 		// 	fmt.Printf("\n Key %v | Value %v ", i, len(v))
 		// }
 
-		meanI := vlib.NewVectorF(NBs)
-		for i := 0; i < NBs; i++ {
+		meanI := vlib.NewVectorF(NBsectors)
+		for i := 0; i < NBsectors; i++ {
 			adjSector := i
 			allueslinks, ok := linkinfo[sector][adjSector]
 			if ok && i%61 != 0 {
@@ -129,7 +129,7 @@ func GetSnapShotInterference(linkinfo map[int]CellMap, activeSectors ...int) map
 
 }
 
-var MeanInterference map[int]vlib.VectorF
+var MeanIPerSectordBm map[int]vlib.VectorF
 
 type SINR struct {
 	S      float64
@@ -197,7 +197,7 @@ func EvaluateSINRMean(ulp LinkFiltered, activeSectors ...int) SINR {
 	for _, k := range activeSectors {
 
 		if k != sector {
-			IdBm := MeanInterference[sector][k]
+			IdBm := MeanIPerSectordBm[sector][k]
 			totalI += vlib.InvDb(IdBm)
 		}
 
