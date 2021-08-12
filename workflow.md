@@ -25,3 +25,15 @@ No Shadow, 112-Electrical Tilt
 ![](/home/ssk/Documents/Articles/2021-08-11-11-34-20-image.png)
 
 ![](/home/ssk/Documents/Articles/2021-08-11-12-14-29-image.png)
+
+
+
+
+
+# New Simulation Set
+
+### 80k Devices , eventsinr-80k
+
+
+
+- Update results with Relay and channels 

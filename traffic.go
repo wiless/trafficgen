@@ -97,3 +97,54 @@ func GenerateTrafficEvents(Ndevices int64, NSectors int, MaxWindowHr float64) {
 
 	}
 }
+
+func GenerateLiveTrafficEvents(Ndevices int64, sectorID int, maxWindowHr float64) EventList {
+	// Ndevices = 72000
+	// fmt.Printf("\nProcessing Window %f\n", maxWindowHr)
+	cell := sectorID
+	var Lamda float64 = 1.0 / (2 * 3600)
+	// fmt.Printf("\n Mean Exp Distribution is %v", 1.0/Lamda)
+	// fmt.Printf("\n Ndevices  %v", Ndevices)
+	// fmt.Printf("\n MaxWindow Hr  %v", maxWindowHr)
+	var frameInterval = 0.01 // 10ms
+
+	var events EventList
+
+	// device := progressbar.Default(Ndevices, fmt.Sprintf("Generating Live Events %v", sectorID))
+	var NEvents = 0
+	for devid := 0; devid < int(Ndevices); devid++ {
+		rndgen := rand.New(rand.NewSource(time.Now().Unix() + rand.Int63()))
+		nsamples := make([]float64, 0, Nsamples)
+		tEventFrameIndex := make([]int64, 0, Nsamples)
+		var pvs = 0.0
+		var maxcount = -1
+		for j := 0; j < Nsamples; j++ {
+			// nsamples[j] = rand.ExpFloat64() / Lamda
+			diff := rndgen.ExpFloat64() / Lamda
+			abstime := pvs + diff
+			if abstime > maxWindowHr {
+				maxcount = j - 1
+				break
+			}
+			nsamples = append(nsamples, abstime) // rndgen.ExpFloat64()/Lamda
+			tEventFrameIndex = append(tEventFrameIndex, int64(math.Ceil(nsamples[j]/frameInterval)))
+			pvs = abstime
+		}
+		if maxcount > -1 {
+			for _, v := range tEventFrameIndex {
+				events = append(events, Event{Frame: v, DeviceID: devid, SectorID: cell})
+			}
+			NEvents += len(tEventFrameIndex)
+
+		}
+		// device.Add(1)
+
+	}
+
+	sort.Slice(events, func(i, j int) bool {
+
+		return events[i].Frame < events[j].Frame
+	})
+
+	return events
+}
