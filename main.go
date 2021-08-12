@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"os"
 	"sort"
 	"time"
 
@@ -114,6 +115,19 @@ func main() {
 	/// EVALUTE SINR per Frame
 	// frame := frameIndex[0]
 	Nframes := len(frameIndex)
+	type FrameLog struct {
+		Frame        int64
+		RxNodeID     int
+		SectorID     int
+		SINR         float64
+		NIevents     int
+		Nevents      int
+		NInterferers int
+	}
+	rfd, _ := os.Create(indir + "eventsinr.csv")
+	header, _ := vlib.Struct2HeaderLine(FrameLog{})
+	rfd.WriteString(header)
+	defer rfd.Close()
 	for k := 0; k < Nframes; k++ {
 		frame := frameIndex[k]
 		events := groupedEvents[frame]
@@ -155,7 +169,20 @@ func main() {
 
 			totalI := vlib.Db(vlib.InvDb(result1.I) + vlib.InvDb(result2.I) + UL_N0)
 			result3 := SINR{S: result1.S, I: totalI, SINRdB: result1.S - totalI}
-			fmt.Printf("\nEffective  = %#v dBm", result3)
+
+			fl := FrameLog{Frame: e.Frame,
+				RxNodeID:     selectedUE.RxNodeID,
+				SectorID:     e.SectorID,
+				SINR:         result3.SINRdB,
+				NIevents:     len(iRxnodeIDs),
+				Nevents:      len(events),
+				NInterferers: len(isectors),
+			}
+
+			// fmt.Printf("\nEffective  = %#v dBm", result3)
+			fmt.Println(fl)
+			str, _ := vlib.Struct2String(fl)
+			rfd.WriteString("\n" + str)
 
 		}
 	}
