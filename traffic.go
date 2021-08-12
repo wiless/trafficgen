@@ -24,11 +24,17 @@ func GenerateTrafficEvents(Ndevices int64, NSectors int, MaxWindowHr float64) {
 	fmt.Printf("\n MaxWindow Hr  %v", MaxWindowHr)
 	var frameInterval = 0.01 // 10ms
 
+	fname := fmt.Sprintf(basedir + "events-cell0.csv")
+	fd, _ := os.Create(fname)
+	defer fd.Close()
+	header, _ := vlib.Struct2HeaderLine(Event{})
+	fd.WriteString(header)
+
 	cfname := fmt.Sprintf(basedir + "events-xx.csv")
 	cfd, _ := os.Create(cfname)
 	defer cfd.Close()
-	header, _ := vlib.Struct2HeaderLine(IEvent{})
-	fmt.Fprint(cfd, header)
+	header, _ = vlib.Struct2HeaderLine(IEvent{})
+	cfd.WriteString(header)
 
 	for cell := 0; cell < NSectors; cell++ {
 
@@ -56,7 +62,7 @@ func GenerateTrafficEvents(Ndevices int64, NSectors int, MaxWindowHr float64) {
 			}
 			if maxcount > -1 {
 				for _, v := range tEventFrameIndex {
-					events = append(events, Event{Frame: v, DeviceID: devid})
+					events = append(events, Event{Frame: v, DeviceID: devid, SectorID: cell})
 				}
 				NEvents += len(tEventFrameIndex)
 
@@ -72,11 +78,6 @@ func GenerateTrafficEvents(Ndevices int64, NSectors int, MaxWindowHr float64) {
 		})
 
 		if math.Mod(float64(cell), float64(ActiveBSCells)) == 0 {
-			fname := fmt.Sprintf(basedir+"event-cell%02d.csv", cell)
-			fd, _ := os.Create(fname)
-			defer fd.Close()
-			header, _ := vlib.Struct2HeaderLine(Event{})
-			fmt.Fprint(fd, header)
 
 			device = progressbar.Default(int64(NEvents), "Saving to "+fname)
 			d3.ForEach(events, func(indx int, v Event) {
