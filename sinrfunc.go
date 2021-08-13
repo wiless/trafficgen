@@ -5,7 +5,7 @@ import (
 	"math/rand"
 	"os"
 
-	"github.com/schollz/progressbar"
+	"github.com/schollz/progressbar/v3"
 	"github.com/wiless/d3"
 	"github.com/wiless/vlib"
 )

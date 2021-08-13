@@ -7,6 +7,7 @@ require (
 	github.com/5gif/config v0.0.0-20201121165622-47f567a72e06
 	github.com/jszwec/csvutil v1.5.0 // indirect
 	github.com/schollz/progressbar v1.0.0
+	github.com/schollz/progressbar/v3 v3.8.2
 	github.com/sirupsen/logrus v1.8.1 // indirect
 	github.com/spf13/viper v1.8.1 // indirect
 	github.com/wiless/d3 v0.0.0-20210812091833-57ad3ea94da6
