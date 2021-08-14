@@ -2,10 +2,11 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"os"
 
-	"github.com/schollz/progressbar/v3"
+	"github.com/schollz/progressbar"
 	"github.com/wiless/d3"
 	"github.com/wiless/vlib"
 )
@@ -25,6 +26,16 @@ type SINRInfo struct {
 	SINRmean     float64
 	SINRsnap     float64
 	SINRideal    float64
+}
+
+// RxNodeID,FreqInGHz,BandwidthMHz,N0,RSSI,BestRSRP,BestRSRPNode,BestSINR,RoIDbm,BestCouplingLoss,MaxTxAg,MaxRxAg,AssoTxAg,AssoRxAg,MaxTransmitBeamID
+type SLSprofile struct {
+	RxNodeID                                                                 int
+	FreqInGHz, BandwidthMHz, N0, RSSI, BestRSRP                              float64
+	BestRSRPNode                                                             int
+	BestSINR, RoIDbm, BestCouplingLoss, MaxTxAg, MaxRxAg, AssoTxAg, AssoRxAg float64
+	MaxTransmitBeamID                                                        int
+	BestULsinr                                                               float64
 }
 
 // SaveSINRProfiles saves SINR of user links in the userlinks array, Interference samples
@@ -60,7 +71,7 @@ func SaveSINRProfiles(fname string, userlinks vLinkFiltered, Ilinks map[int]Cell
 		signal := lp.CouplingLoss + ueTxPowerdBm
 		SINRmean := signal - totalIdBm                                  // UL_N0dB need to be added
 		SINRsnapshot := signal - SnapShotIPerSectordBm[lp.BestRSRPNode] // UL_N0dB need to be added
-		SINRideal := signal - UL_N0dB
+		SINRideal := signal - BS_N0dB
 		info := SINRInfo{RxNodeID: lp.RxNodeID, BestRSRPNode: lp.BestRSRPNode, SINRmean: SINRmean, SINRsnap: SINRsnapshot, SINRideal: SINRideal}
 		infostr, _ := vlib.Struct2String(info)
 		fd.WriteString("\n" + infostr)
@@ -138,12 +149,11 @@ type SINR struct {
 }
 
 // EvaluateSINR return Ideal SINR with Interference from adjacent sectors of Cell0
-func EvaluateSINR(ulp LinkFiltered, otherdevicesID ...int) SINR {
+func EvaluateSINR(ulp LinkFiltered, otherRxIDs ...int) SINR {
 	// Inteference from adjacent sectors ?
 	totalI := 0.0
-	for _, device := range otherdevicesID {
+	for _, device := range otherRxIDs {
 		ilp := d3.FindFirst(ilinksCell0, func(lp LinkFiltered) bool {
-
 			found := lp.RxNodeID == device && lp.TxID == ulp.BestRSRPNode
 			// if found {
 			// 	fmt.Println("Found .. ", lp)
@@ -152,12 +162,14 @@ func EvaluateSINR(ulp LinkFiltered, otherdevicesID ...int) SINR {
 		}).(LinkFiltered)
 		if ilp.RxNodeID != 0 {
 			totalI += vlib.InvDb(ilp.CouplingLoss + ueTxPowerdBm)
+		} else {
+			fmt.Printf("\n Seems the device %d not found in Sector %d", device, ulp.BestRSRPNode)
 		}
 
 	}
 
 	// if totalI != 0 {
-	sinr := ulp.CouplingLoss + ueTxPowerdBm - vlib.Db(totalI+UL_N0)
+	sinr := ulp.CouplingLoss + ueTxPowerdBm - vlib.Db(totalI+bs_N0)
 
 	return SINR{S: ulp.CouplingLoss + ueTxPowerdBm, I: vlib.Db(totalI), SINRdB: sinr}
 	// }
@@ -176,13 +188,22 @@ func EvaluateTotalI(ulp LinkFiltered, activeSectors ...int) SINR {
 		if ok && k != sector {
 			picked := allueslinks[rand.Intn(len(allueslinks))]
 			totalI += vlib.InvDb(picked.CouplingLoss + itucfg.UETxDbm)
+		} else {
+			if ulp.BestRSRPNode > NBsectors {
+				// its a relay connected DEVICE !!
+				// fmt.Printf("\nNo Info : interference from %d to %d", k, ulp.BestRSRPNode)
+				// Still add some random
+				// random= // 0 / 61 / 122
+				// ilinks[random][k]
+			}
+
 		}
 
 	}
 	// return ulp.CouplingLoss + ueTxPowerdBm - UL_N0dB
 
-	sinr := ulp.CouplingLoss + ueTxPowerdBm - vlib.Db(totalI+UL_N0)
-	IdBm := -1000.0
+	sinr := ulp.CouplingLoss + ueTxPowerdBm - vlib.Db(totalI+bs_N0)
+	IdBm := math.Inf(-1)
 	if totalI != 0 {
 		IdBm = vlib.Db(totalI)
 	}
@@ -203,7 +224,7 @@ func EvaluateSINRMean(ulp LinkFiltered, activeSectors ...int) SINR {
 
 	}
 
-	sinr := ulp.CouplingLoss + ueTxPowerdBm - vlib.Db(totalI+UL_N0)
+	sinr := ulp.CouplingLoss + ueTxPowerdBm - vlib.Db(totalI+bs_N0)
 	IdBm := -1000.0
 	if totalI != 0 {
 		IdBm = vlib.Db(totalI)
@@ -215,5 +236,109 @@ func EvaluateSINRMean(ulp LinkFiltered, activeSectors ...int) SINR {
 // returns the mean of values which are in dB, in dB
 func MeanInDb(v vlib.VectorF) float64 {
 	return vlib.Db(vlib.Mean(vlib.InvDbF(v)))
+
+}
+
+func EvaluateLinkMetric(rx UElocation, tx UElocation) LinkFiltered {
+	src := rx.Location3D()
+	dest := tx.Location3D()
+	newlink := LinkProfile{
+		RxNodeID: rx.ID,
+		TxID:     tx.ID,
+		Distance: dest.DistanceFrom(src),
+		UEHeight: rx.Z,
+	}
+	// IsLOS:
+	// CouplingLoss, Pathloss, O2I, InCar, ShadowLoss, TxPower, BSAasgainDB, UEAasgainDB, TxGCSaz, TxGCSel, RxGCSaz, RxGCSel
+	var indoordist = 0.0
+	if rx.Indoor {
+		indoordist = 25.0 * rand.Float64() // Assign random indoor distance  See Table 7.4.3-2
+	}
+
+	newlink.IndoorDistance = indoordist
+	newlink.IsLOS = IsLOS(newlink.Distance) // @Todo
+
+	newlink.InCar = 0 // NO CARS in mMTC
+	if rx.InCar {
+		newlink.InCar = O2ICarLossDb() // Calculate InCar Loss
+
+	}
+
+	if newlink.IsLOS {
+		newlink.Pathloss = PL(newlink.Distance, itucfg.CarriersGHz, 1.5) // @Todo
+	} else {
+		newlink.Pathloss = PLNLOS(newlink.Distance, itucfg.CarriersGHz, 1.5) // @Todo
+	}
+
+	if rx.Indoor {
+		newlink.O2I = O2ILossDb(itucfg.CarriersGHz, newlink.IndoorDistance)
+	}
+	newlink.CouplingLoss = newlink.BSAasgainDB - (newlink.Pathloss + newlink.O2I + newlink.InCar) // CouplingGain
+
+	newlink.TxPower = 23.0
+	newlink.BSAasgainDB = 0
+	var lp LinkFiltered
+	lp = LinkFiltered{RxNodeID: newlink.RxNodeID, TxID: newlink.TxID, CouplingLoss: newlink.CouplingLoss, BestRSRPNode: -1}
+
+	return lp
+}
+
+var uelocs map[int]UElocation
+
+func LoadUELocations(fname string) {
+	uelocs = make(map[int]UElocation)
+
+	d3.ForEachParse(fname, func(ue UElocation) {
+		uelocs[ue.ID] = ue
+	})
+
+}
+
+// EvaluateRelaySINR return Ideal SINR with Interference from adjacent sectors of Cell0
+func EvaluateRelaySINR(ulp LinkFiltered, otherRxIDs ...int) SINR {
+
+	// Inteference from adjacent sectors ?
+	if len(uelocs) == 0 {
+		LoadUELocations(indir + "uelocation-cell00.csv")
+	}
+	var rlinkMetric vLinkFiltered
+	rlinkMetric = make(vLinkFiltered, 0)
+	for _, rxid := range otherRxIDs {
+
+		if ulp.BestRSRPNode >= NBsectors {
+			// If BestRSRPnode must be higher than usual basestations for relay associated device
+			relay := uelocs[ulp.BestRSRPNode]
+			tx := uelocs[rxid]
+			lp := EvaluateLinkMetric(relay, tx)
+			rlinkMetric = append(rlinkMetric, lp)
+			fmt.Printf("\n Evaluating Link between %d and %d ", ulp.RxNodeID, rxid)
+		}
+	}
+
+	totalI := 0.0
+	for _, device := range otherRxIDs {
+
+		ilp := d3.FindFirst(rlinkMetric, func(lp LinkFiltered) bool {
+
+			found := lp.RxNodeID == device && lp.TxID == ulp.BestRSRPNode
+			// if found {
+			// 	fmt.Println("Found .. ", lp)
+			// }
+			return found
+		}).(LinkFiltered)
+		if ilp.RxNodeID != 0 {
+			totalI += vlib.InvDb(ilp.CouplingLoss + ueTxPowerdBm)
+		} else {
+			fmt.Printf("\n Seems the device %d not found in Sector %d", device, ulp.BestRSRPNode)
+		}
+
+	}
+
+	// if totalI != 0 {
+	sinr := ulp.CouplingLoss + ueTxPowerdBm - vlib.Db(totalI+ue_N0)
+
+	return SINR{S: ulp.CouplingLoss + ueTxPowerdBm, I: vlib.Db(totalI), SINRdB: sinr}
+	// }
+	// return ulp.CouplingLoss + ueTxPowerdBm - UL_N0dB
 
 }

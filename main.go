@@ -9,7 +9,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/schollz/progressbar/v3"
+	"github.com/schollz/progressbar"
 	"github.com/wiless/d3"
 	"github.com/wiless/vlib"
 )
@@ -25,6 +25,20 @@ type Event struct {
 type IEvent struct {
 	Frame    int64
 	SectorID int
+}
+
+type LinkProfile struct {
+	RxNodeID                                                                                                              int
+	TxID                                                                                                                  int
+	Distance                                                                                                              float64
+	IndoorDistance, UEHeight                                                                                              float64
+	IsLOS                                                                                                                 bool
+	CouplingLoss, Pathloss, O2I, InCar, ShadowLoss, TxPower, BSAasgainDB, UEAasgainDB, TxGCSaz, TxGCSel, RxGCSaz, RxGCSel float64
+}
+
+type RelayNode struct {
+	UElocation
+	FrequencyGHz float64
 }
 
 var NObservationSecs float64 = 2 * 3600 // seconds
@@ -76,6 +90,7 @@ func init() {
 }
 
 var associationMap map[int]vlib.VectorI
+var associationSLSmap map[int][]SLSprofile
 var groupedEvents map[int]EventList
 var frameIndex vlib.VectorI
 var groupedIEvents map[int]vlib.VectorI
@@ -90,35 +105,68 @@ func main() {
 	/// LOAD ACTIVE DEVICES in Cell 0
 	// Loaded for ACTIVE DEVICE Information  72k devices
 	associationMap = make(map[int]vlib.VectorI)
+	associationSLSmap := make(map[int][]SLSprofile)
 	cell0links := make(vLinkFiltered, 0) // Ideally will have 0,61,122 devices
 	ilinksCell0 = make(vLinkFiltered, 0) // Links of Cell 0 devices interfering to adjacent sectors
+
 	pbar := progressbar.Default(int64(itucfg.NumUEperCell*3), "Center Cell UEs")
 	counter := 0
-	d3.ForEachParse(indir+"linkproperties-mini-filtered.csv", func(l LinkFiltered) {
-		if math.Mod(float64(l.BestRSRPNode), float64(ActiveBSCells)) == 0 && l.BestRSRPNode == l.TxID {
-			// Link property of device connected to SECTOR 0, 61 and 122
+	d3.ForEachParse(indir+"hybridnewsls-mini.csv", func(s SLSprofile) {
+		/// backward compatibility
+		l := LinkFiltered{RxNodeID: s.RxNodeID, TxID: s.BestRSRPNode, CouplingLoss: s.BestCouplingLoss, BestRSRPNode: s.BestRSRPNode}
+		var isConnectedToRelay bool = false
+
+		if s.FreqInGHz > 0 {
+			isConnectedToRelay = true
+		}
+		// fmt.Printf("\n Device %d | Connected to %v on %v | Is RelayLink ? %v", s.RxNodeID, s.BestRSRPNode, s.FreqInGHz, isConnectedToRelay)
+		if math.Mod(float64(l.BestRSRPNode), float64(ActiveBSCells)) == 0 || isConnectedToRelay {
 			cell0links = append(cell0links, l)
 			index := associationMap[l.BestRSRPNode]
 			index = append(index, counter)
 			associationMap[l.BestRSRPNode] = index
+			// fmt.Printf("\t Added  %d devices to %d", len(index), l.BestRSRPNode)
+			/// Append SLS for the each TxNodes, Relays
+			nodes := associationSLSmap[l.BestRSRPNode]
+			associationSLSmap[l.BestRSRPNode] = append(nodes, s)
 			counter++
 		}
-		if math.Mod(float64(l.BestRSRPNode), float64(ActiveBSCells)) == 0 && l.BestRSRPNode != l.TxID {
-			// Link property of device connected to SECTOR 0, 61 and 122 and interfering each other
-			ilinksCell0 = append(ilinksCell0, l)
-		}
-		pbar.Add(1)
+
 	})
 
-	//
-	LoadAndFilterEvents(true)
-	fmt.Printf("FrameEvents : %d ", len(frameIndex))
+	fmt.Printf("Total Associations %d %d", len(associationMap), counter)
 
+	pbar = progressbar.Default(int64(len(cell0links)), "Scan Links")
+	// Inteference links to adjacent sectors , remove devices that are already connected to RELAY
+
+	d3.ForEachParse(indir+"linkproperties-mini-filtered.csv", func(l LinkFiltered) {
+		if math.Mod(float64(l.BestRSRPNode), float64(ActiveBSCells)) == 0 {
+
+			/// SKIP if device is reassociated to relay
+			nodes := associationSLSmap[l.BestRSRPNode]
+
+			nodeindx := d3.FindFirstIndex(nodes, func(s SLSprofile) bool {
+				return s.RxNodeID == l.RxNodeID
+			})
+			if nodeindx != -1 && l.TxID != l.BestRSRPNode { // Not found in 122
+
+				// Link property of device connected to SECTOR 0, 61 and 122 and interfering each other
+				ilinksCell0 = append(ilinksCell0, l)
+
+			}
+
+		}
+		pbar.Add(1)
+
+	})
+	//
+
+	frameIndex = LoadAndFilterEvents(true)
+	fmt.Printf("FrameEvents : %d ", len(frameIndex))
 	////  INTERFERENCE RELATED
 	/// LOAD INTERFERENCE related paramters
 	ilinks = LoadULInterferenceLinks(basedir + "isectorproperties.csv")
 	MeanIPerSectordBm = GetMeanInterference(ilinks)
-	// SaveSINRProfiles("ulsinr.csv", cell0links, ilinks)
 
 	/// LOAD EVENTS
 
@@ -143,46 +191,78 @@ func main() {
 		frame := frameIndex[k]
 		events := groupedEvents[frame]
 		isectors, _ := groupedIEvents[frame]
-		// fmt.Printf("\nFrame %d | NEvents %d : %v", frame, len(events), events)
+
+		fmt.Printf("\nFrame %d | NEvents %d : %v", frame, len(events), events)
 		for _, e := range events {
 			// {34992 61874 0}
 			indx := associationMap[e.SectorID][e.DeviceID]
-			selectedUE := cell0links[indx]
+			selUElink := cell0links[indx]
 
-			// fmt.Printf("\n\t Device#%d=>RxNodeID %d, Sector %d ", e.DeviceID, selectedUE.RxNodeID, selectedUE.BestRSRPNode)
-			// fmt.Printf("\n\t Interfering sectors %v ", isectors)
+			tmpsls := associationSLSmap[e.SectorID][0] // Pick first entry to check the frequency
+			currentfreqGHz := tmpsls.FreqInGHz
+			if currentfreqGHz == 0 {
+				fmt.Printf("\n\t Device#%d=>RxNodeID %d, Sector %d Channel[%v]", e.DeviceID, selUElink.RxNodeID, selUElink.BestRSRPNode, currentfreqGHz)
+				fmt.Printf("\n\t Interfering sectors %v ", isectors)
+
+			}
 
 			// rxnodeid := Loopkup(e.DeviceID)
 
 			// ISectors  [8 12 24 35 38 52 53 55 74 98 110 113 135 143 144 152 155 173]
 			ievents := d3.Filter(events, func(d Event) bool {
-				if d.SectorID == e.SectorID {
-					// Multiple devices of same sector
-					return DoesCollides(e.DeviceID, d.DeviceID)
-				} else {
-					return true
+				if (d.SectorID == e.SectorID) && (d.DeviceID == e.DeviceID) {
+					// skip the same device
+					return false
 				}
-			}).(EventList)
+				iFrequency := associationSLSmap[d.SectorID][0].FreqInGHz
+				// fmt.Printf("\n\tI.Device#%d=>RxNodeID ??, Sector %d Channel[%v]", d.DeviceID, d.SectorID, iFrequency)
+				if currentfreqGHz != iFrequency {
+					fmt.Printf("**Different Channel***")
+					// e.g. Sector 0 and any Relay Device will be on separate frequency , so interference
+					return false
+				}
+				if d.SectorID == e.SectorID {
+					// Multiple devices of same sector (Sector 0 or Same Relay Node )
+					return DoesCollides(e.DeviceID, d.DeviceID)
+				}
+				// if Same Frequency but different Sector ID .. they will still co-incide like two different RELAY simulataneous transmission
+				return true
 
-			// fmt.Printf("\n\t Adjacent sectors %v ", ievents)
+			}).(EventList)
+			if len(events) > 1 {
+				fmt.Printf("\n\t Incell Sectors %v ", ievents)
+			}
+
 			iRxnodeIDs := vlib.NewVectorI(len(ievents))
 			d3.ForEach(ievents, func(i int, ie Event) {
+				//
 				indx := associationMap[ie.SectorID][ie.DeviceID]
 				iRxnodeIDs[i] = cell0links[indx].RxNodeID
-				// fmt.Printf("\n\t\t Cell0-DeviceID#%d=> rxids %v@Sector %d", ie, cell0links[indx].RxNodeID, ie.SectorID)
+				if len(events) > 1 {
+					fmt.Printf("\n\t\t Other I.DeviceID#%d=> rxids %v@Sector %d", ie.DeviceID, cell0links[indx].RxNodeID, ie.SectorID)
+				}
 			})
 
 			// devIDs := d3.FlatMap(ievents, "DeviceID").([]int)
 			/// map devIDs to rxNodeIDs
 
-			result1 := EvaluateTotalI(selectedUE, isectors...) // [8 12 24 35 38 52 53 55 74 98 110 113 135 143 144 152 155 173]
-			result2 := EvaluateSINR(selectedUE, iRxnodeIDs...) // 18823, 33748 // {34992 18823 61} {34992 33748 122}
-
-			totalI := vlib.Db(vlib.InvDb(result1.I) + vlib.InvDb(result2.I) + UL_N0)
+			result1 := EvaluateTotalI(selUElink, isectors...) // [8 12 24 35 38 52 53 55 74 98 110 113 135 143 144 152 155 173]
+			result2 := EvaluateSINR(selUElink, iRxnodeIDs...) // 18823, 33748 // {34992 18823 61} {34992 33748 122}
+			result2r := EvaluateRelaySINR(selUElink, iRxnodeIDs...)
+			// All SINR
+			fmt.Printf("\n SINR Adjacent Cells   %#v", result1)
+			fmt.Printf("\n SINR Adjacent Sectors [%d Devices] %#v", len(iRxnodeIDs), result2)
+			fmt.Printf("\n SINR Relay[%d] @ %v : %#v", selUElink.BestRSRPNode, currentfreqGHz, result2r)
+			noiseLinear := bs_N0
+			if currentfreqGHz > 0 {
+				// relay is the receiver
+				noiseLinear = ue_N0
+			}
+			totalI := vlib.Db(vlib.InvDb(result1.I) + vlib.InvDb(result2.I) + vlib.InvDb(result2r.I) + noiseLinear)
 			result3 := SINR{S: result1.S, I: totalI, SINRdB: result1.S - totalI}
 
 			fl := FrameLog{Frame: e.Frame,
-				RxNodeID:     selectedUE.RxNodeID,
+				RxNodeID:     selUElink.RxNodeID,
 				SectorID:     e.SectorID,
 				SINR:         result3.SINRdB,
 				NIevents:     len(iRxnodeIDs),
@@ -190,7 +270,7 @@ func main() {
 				NInterferers: len(isectors),
 			}
 
-			// fmt.Printf("\nEffective  = %#v dBm", result3)
+			fmt.Printf("\nEffective  = %#v dBm", result3)
 			if verbose {
 				fmt.Printf("\n\t Effecting SINR %#v ", fl)
 			}
@@ -199,7 +279,7 @@ func main() {
 			rfd.WriteString("\n" + str)
 
 		}
-		pbar.Add(1)
+		// pbar.Add(1)
 	}
 
 }
@@ -261,8 +341,8 @@ func LoadULInterferenceLinks(fname string) map[int]CellMap {
 	return result
 }
 
-func LoadAndFilterEvents(live bool) {
-
+func LoadAndFilterEvents(live bool) vlib.VectorI {
+	var result vlib.VectorI
 	// Grouping of EVENTS based on FRAME
 	groupedEvents = make(map[int]EventList)
 	groupedIEvents = make(map[int]vlib.VectorI)
@@ -280,7 +360,7 @@ func LoadAndFilterEvents(live bool) {
 			evlist = append(evlist, ev)
 			groupedEvents[int(ev.Frame)] = evlist
 			if !ok {
-				frameIndex = append(frameIndex, int(ev.Frame))
+				result = append(result, int(ev.Frame))
 			}
 
 		})
@@ -309,6 +389,7 @@ func LoadAndFilterEvents(live bool) {
 			// NdevicesPerSector := math.Ceil(1.5 * float64(Ndevices) / 3)
 			NdevicesPerSector := v.Len()
 			totalUE += NdevicesPerSector
+			// fmt.Printf("\n Sector %d - Generating Live Traffics %v ", sector, NdevicesPerSector)
 			allev := GenerateLiveTrafficEvents(int64(NdevicesPerSector), sector, MaxWindowHr)
 
 			d3.ForEach(allev, func(ev Event) {
@@ -318,7 +399,7 @@ func LoadAndFilterEvents(live bool) {
 					evlist = append(evlist, ev)
 					groupedEvents[int(ev.Frame)] = evlist
 					if !ok {
-						frameIndex = append(frameIndex, int(ev.Frame))
+						result = append(result, int(ev.Frame))
 					}
 				}
 
@@ -326,10 +407,11 @@ func LoadAndFilterEvents(live bool) {
 		}
 
 		var NdevicesPerSector int = int(float64(totalUE) / 3)
-		pbar1 := progressbar.Default(int64(NBsectors), "Interference Events ")
+		pbar1 := progressbar.Default(int64(NBsectors), "Adjacent Cell Events")
 		for sector := 0; sector < NBsectors; sector++ {
-			pbar1.Describe(fmt.Sprintf("Interference Events %d", sector))
+			pbar1.Describe(fmt.Sprintf("Adjacent Sector %d", sector))
 			if !sectorIDs.Contains(sector) {
+				// fmt.Printf("\nIevents for Adjacent Sector %d", sector)
 				iallev := GenerateLiveTrafficEvents(int64(NdevicesPerSector), sector, MaxWindowHr)
 				// fmt.Printf("Generated I Events : %d for %d", len(iallev), sector)
 				d3.ForEach(iallev, func(ev Event) {
@@ -351,9 +433,11 @@ func LoadAndFilterEvents(live bool) {
 
 	}
 
-	sort.Slice(frameIndex, func(i, j int) bool {
-		return frameIndex[i] < frameIndex[j]
+	sort.Slice(result, func(i, j int) bool {
+		return result[i] < result[j]
 	})
+
+	return result
 
 }
 

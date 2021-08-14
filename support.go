@@ -27,7 +27,11 @@ type UElocation struct {
 	// Address
 }
 
-var RxNoisedB, TxNoisedB float64
+func (ue UElocation) Location3D() vlib.Location3D {
+	return vlib.Location3D{ue.X, ue.Y, ue.Z}
+}
+
+var ueNoiseFdB, bsNoiseFdB float64
 var itucfg config.ITUconfig
 var simcfg config.SIMconfig
 
@@ -35,8 +39,8 @@ var simcfg config.SIMconfig
 var bsTxPowerdBm, ueTxPowerdBm float64
 var NBsectors int
 var ActiveBSCells int
-var N0, UL_N0 float64 // N0 in linear scale
-var UL_N0dB float64
+var ue_N0, bs_N0 float64     // Total N0 in linear scale
+var UE_N0dB, BS_N0dB float64 // Total Noise in dB
 
 var Er = func(err error) {
 	if err != nil {
@@ -57,20 +61,20 @@ func loadSysParams() {
 	NBsectors = ActiveBSCells * 3 // len(bslocs)
 
 	BW = itucfg.BandwidthMHz
-	RxNoisedB = itucfg.UENoiseFigureDb // For Downlink
-	TxNoisedB = itucfg.BSNoiseFigureDb // For Uplink
+	ueNoiseFdB = itucfg.UENoiseFigureDb // For Downlink
+	bsNoiseFdB = itucfg.BSNoiseFigureDb // For Uplink
 
-	N0dB := -174 + vlib.Db(BW*1e6) + RxNoisedB // in linear scale
-	N0 = vlib.InvDb(N0dB)
+	UE_N0dB = -174 + vlib.Db(BW*1e6) + ueNoiseFdB // Noise at the UE device
+	ue_N0 = vlib.InvDb(UE_N0dB)
 
-	UL_N0dB = -174 + vlib.Db(BW*1e6) + TxNoisedB // in linear scale
-	UL_N0 = vlib.InvDb(UL_N0dB)
+	BS_N0dB = -174 + vlib.Db(BW*1e6) + bsNoiseFdB // Noise at the BS
+	bs_N0 = vlib.InvDb(BS_N0dB)
 
 	bsTxPowerdBm = itucfg.TxPowerDbm
 	ueTxPowerdBm = itucfg.UETxDbm
 
 	fmt.Println("Total Active Sectors ", NBsectors)
 
-	fmt.Println("DL : N0 (dB)", N0dB)
-	fmt.Println("UL : N0 (dB)", UL_N0dB)
+	fmt.Println("DL: N0 @ UE (dBm)", UE_N0dB)
+	fmt.Println("UL: N0 @ BS (dBm)", BS_N0dB)
 }
