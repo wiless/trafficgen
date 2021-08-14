@@ -131,38 +131,36 @@ func main() {
 			associationSLSmap[l.BestRSRPNode] = append(nodes, s)
 			counter++
 		}
-
+		pbar.Add(1)
 	})
 
-	fmt.Printf("Total Associations %d %d", len(associationMap), counter)
+	fmt.Printf("\n Total Associations %d %d \n ", len(associationMap), counter)
+	fmt.Printf("\n Total Nodes in 0 %d  \n ", len(associationMap[0]))
+	fmt.Printf("\n Total Nodes in 61 %d  \n ", len(associationMap[61]))
+	fmt.Printf("\n Total Nodes in 122 %d \n ", len(associationMap[122]))
 
-	pbar = progressbar.Default(int64(len(cell0links)), "Scan Links")
+	pbar = progressbar.Default(int64(counter*3), "Scan Links")
 	// Inteference links to adjacent sectors , remove devices that are already connected to RELAY
+	node0 := associationMap[0]
+	node1 := associationMap[61]
+	node2 := associationMap[122]
 
 	d3.ForEachParse(indir+"linkproperties-mini-filtered.csv", func(l LinkFiltered) {
-		if math.Mod(float64(l.BestRSRPNode), float64(ActiveBSCells)) == 0 {
 
-			/// SKIP if device is reassociated to relay
-			nodes := associationSLSmap[l.BestRSRPNode]
+		if node0.Contains(l.RxNodeID) || node1.Contains(l.RxNodeID) || node2.Contains(l.RxNodeID) {
 
-			nodeindx := d3.FindFirstIndex(nodes, func(s SLSprofile) bool {
-				return s.RxNodeID == l.RxNodeID
-			})
-			if nodeindx != -1 && l.TxID != l.BestRSRPNode { // Not found in 122
-
+			if l.TxID != l.BestRSRPNode { // Not found in 122
 				// Link property of device connected to SECTOR 0, 61 and 122 and interfering each other
 				ilinksCell0 = append(ilinksCell0, l)
-
 			}
-
 		}
-		pbar.Add(1)
 
+		pbar.Add(1)
 	})
-	//
 
 	frameIndex = LoadAndFilterEvents(true)
-	fmt.Printf("FrameEvents : %d ", len(frameIndex))
+	fmt.Printf("\n FrameEvents : %d ", len(frameIndex))
+
 	////  INTERFERENCE RELATED
 	/// LOAD INTERFERENCE related paramters
 	ilinks = LoadULInterferenceLinks(basedir + "isectorproperties.csv")
@@ -176,6 +174,7 @@ func main() {
 	type FrameLog struct {
 		Frame        int64
 		RxNodeID     int
+		FrequencyGHz float64
 		SectorID     int
 		SINR         float64
 		NIevents     int
@@ -203,7 +202,6 @@ func main() {
 			if currentfreqGHz == 0 {
 				fmt.Printf("\n\t Device#%d=>RxNodeID %d, Sector %d Channel[%v]", e.DeviceID, selUElink.RxNodeID, selUElink.BestRSRPNode, currentfreqGHz)
 				fmt.Printf("\n\t Interfering sectors %v ", isectors)
-
 			}
 
 			// rxnodeid := Loopkup(e.DeviceID)
@@ -250,9 +248,9 @@ func main() {
 			result2 := EvaluateSINR(selUElink, iRxnodeIDs...) // 18823, 33748 // {34992 18823 61} {34992 33748 122}
 			result2r := EvaluateRelaySINR(selUElink, iRxnodeIDs...)
 			// All SINR
-			fmt.Printf("\n SINR Adjacent Cells   %#v", result1)
-			fmt.Printf("\n SINR Adjacent Sectors [%d Devices] %#v", len(iRxnodeIDs), result2)
-			fmt.Printf("\n SINR Relay[%d] @ %v : %#v", selUElink.BestRSRPNode, currentfreqGHz, result2r)
+			// fmt.Printf("\n SINR Adjacent Cells   %#v", result1)
+			// fmt.Printf("\n SINR Adjacent Sectors [%d Devices] %#v", len(iRxnodeIDs), result2)
+			// fmt.Printf("\n SINR Relay[%d] @ %v : %#v", selUElink.BestRSRPNode, currentfreqGHz, result2r)
 			noiseLinear := bs_N0
 			if currentfreqGHz > 0 {
 				// relay is the receiver
@@ -263,6 +261,7 @@ func main() {
 
 			fl := FrameLog{Frame: e.Frame,
 				RxNodeID:     selUElink.RxNodeID,
+				FrequencyGHz: currentfreqGHz,
 				SectorID:     e.SectorID,
 				SINR:         result3.SINRdB,
 				NIevents:     len(iRxnodeIDs),
@@ -270,7 +269,7 @@ func main() {
 				NInterferers: len(isectors),
 			}
 
-			fmt.Printf("\nEffective  = %#v dBm", result3)
+			// fmt.Printf("\nEffective  = %#v dBm", result3)
 			if verbose {
 				fmt.Printf("\n\t Effecting SINR %#v ", fl)
 			}
@@ -342,7 +341,9 @@ func LoadULInterferenceLinks(fname string) map[int]CellMap {
 }
 
 func LoadAndFilterEvents(live bool) vlib.VectorI {
+
 	var result vlib.VectorI
+
 	// Grouping of EVENTS based on FRAME
 	groupedEvents = make(map[int]EventList)
 	groupedIEvents = make(map[int]vlib.VectorI)
@@ -384,6 +385,7 @@ func LoadAndFilterEvents(live bool) vlib.VectorI {
 
 		var sectorIDs vlib.VectorI
 		totalUE := 0
+		pbar1 := progressbar.Default(int64(len(associationMap)), "Live Events Cell 0")
 		for sector, v := range associationMap {
 			sectorIDs = append(sectorIDs, sector)
 			// NdevicesPerSector := math.Ceil(1.5 * float64(Ndevices) / 3)
@@ -404,10 +406,12 @@ func LoadAndFilterEvents(live bool) vlib.VectorI {
 				}
 
 			})
+			pbar1.Add(1)
+
 		}
 
 		var NdevicesPerSector int = int(float64(totalUE) / 3)
-		pbar1 := progressbar.Default(int64(NBsectors), "Adjacent Cell Events")
+		pbar1 = progressbar.Default(int64(NBsectors), "Adjacent Cell Events")
 		for sector := 0; sector < NBsectors; sector++ {
 			pbar1.Describe(fmt.Sprintf("Adjacent Sector %d", sector))
 			if !sectorIDs.Contains(sector) {

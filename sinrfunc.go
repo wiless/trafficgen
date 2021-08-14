@@ -182,6 +182,7 @@ func EvaluateTotalI(ulp LinkFiltered, activeSectors ...int) SINR {
 	var totalI float64 = 0
 
 	sector := ulp.BestRSRPNode
+	// fmt.Printf("Looking for interence towards %d ", sector)
 	for _, k := range activeSectors {
 
 		allueslinks, ok := ilinks[sector][k]
@@ -239,19 +240,19 @@ func MeanInDb(v vlib.VectorF) float64 {
 
 }
 
-func EvaluateLinkMetric(rx UElocation, tx UElocation) LinkFiltered {
-	src := rx.Location3D()
-	dest := tx.Location3D()
+func EvaluateLinkMetric(relay UElocation, device UElocation) LinkFiltered {
+	src := device.Location3D()
+	dest := relay.Location3D()
 	newlink := LinkProfile{
-		RxNodeID: rx.ID,
-		TxID:     tx.ID,
+		RxNodeID: device.ID,
+		TxID:     relay.ID,
 		Distance: dest.DistanceFrom(src),
-		UEHeight: rx.Z,
+		UEHeight: device.Z,
 	}
 	// IsLOS:
 	// CouplingLoss, Pathloss, O2I, InCar, ShadowLoss, TxPower, BSAasgainDB, UEAasgainDB, TxGCSaz, TxGCSel, RxGCSaz, RxGCSel
 	var indoordist = 0.0
-	if rx.Indoor {
+	if device.Indoor {
 		indoordist = 25.0 * rand.Float64() // Assign random indoor distance  See Table 7.4.3-2
 	}
 
@@ -259,18 +260,18 @@ func EvaluateLinkMetric(rx UElocation, tx UElocation) LinkFiltered {
 	newlink.IsLOS = IsLOS(newlink.Distance) // @Todo
 
 	newlink.InCar = 0 // NO CARS in mMTC
-	if rx.InCar {
+	if device.InCar {
 		newlink.InCar = O2ICarLossDb() // Calculate InCar Loss
 
 	}
 
 	if newlink.IsLOS {
-		newlink.Pathloss = PL(newlink.Distance, itucfg.CarriersGHz, 1.5) // @Todo
+		newlink.Pathloss = PL(newlink.Distance, itucfg.CarriersGHz, 1.7) // @Todo
 	} else {
-		newlink.Pathloss = PLNLOS(newlink.Distance, itucfg.CarriersGHz, 1.5) // @Todo
+		newlink.Pathloss = PLNLOS(newlink.Distance, itucfg.CarriersGHz, 1.7) // @Todo
 	}
 
-	if rx.Indoor {
+	if device.Indoor {
 		newlink.O2I = O2ILossDb(itucfg.CarriersGHz, newlink.IndoorDistance)
 	}
 	newlink.CouplingLoss = newlink.BSAasgainDB - (newlink.Pathloss + newlink.O2I + newlink.InCar) // CouplingGain
@@ -326,10 +327,11 @@ func EvaluateRelaySINR(ulp LinkFiltered, otherRxIDs ...int) SINR {
 			// }
 			return found
 		}).(LinkFiltered)
-		if ilp.RxNodeID != 0 {
+
+		if ilp.RxNodeID != 0 { // Assuming found
 			totalI += vlib.InvDb(ilp.CouplingLoss + ueTxPowerdBm)
 		} else {
-			fmt.Printf("\n Seems the device %d not found in Sector %d", device, ulp.BestRSRPNode)
+			fmt.Printf("\n iUE (%d) to Relay (%d) LinkMetric not found", device, ulp.BestRSRPNode)
 		}
 
 	}
